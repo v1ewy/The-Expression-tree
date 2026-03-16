@@ -1,4 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS 1
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +49,8 @@ typedef enum {
     NODE_NUM, // число
     NODE_VAR, // переменная
     NODE_UNARY, // унарные + и -
-    NODE_BINARY } NodeType; // бинарные операции
+    NODE_BINARY // бинарные операции
+} NodeType;
 
 typedef struct Node {
     NodeType type;
@@ -115,7 +116,7 @@ void free_tree(Node* node) {
 int is_valid_expr_char(char c) {
     if (isdigit(c)) return 1;
     if (islower(c)) return 1;
-    if (strchr("+-*/%#!(),", c)) return 1;
+    if (strchr("+-*/%^!(),", c)) return 1;
     if (isspace(c)) return 1;
     return 0;
 }
@@ -210,14 +211,14 @@ Node* parse_factor(ParserInfix* p) {
     while (1) {
         skip_spaces_inf(p);
         char op = current_char_inf(p);
-        if (op == '#') {
+        if (op == '^') {
             p->pos++;
             Node* right = parse_unary(p);
             if (!right) {
                 free_tree(left);
                 return NULL;
             }
-            left = create_binary('#', left, right);
+            left = create_binary('^', left, right);
         }
         else {
             break;
@@ -309,7 +310,7 @@ Node* parse_prefix_sub(ParserPrefix* p) {
         p->pos++;
         return create_var(c);
     }
-    if (strchr("+-*/%#!", c)) {
+    if (strchr("+-*/%^!", c)) {
         char op = c;
         p->pos++;
         skip_spaces_pref(p);
@@ -409,7 +410,7 @@ Node* parse_postfix_sub(ParserPostfix* p) {
             p->pos++; // ')'
             skip_spaces_post(p);
             char op = p->s[p->pos];
-            if (!strchr("+-*/%#!", op)) {
+            if (!strchr("+-*/%^!", op)) {
                 free_tree(left);
                 free_tree(right);
                 return NULL;
@@ -421,7 +422,7 @@ Node* parse_postfix_sub(ParserPostfix* p) {
             p->pos++; // ')'
             skip_spaces_post(p);
             char op = p->s[p->pos];
-            if (!strchr("+-*/%#!", op)) {
+            if (!strchr("+-*/%^!", op)) {
                 free_tree(left);
                 return NULL;
             }
@@ -543,11 +544,14 @@ long long eval_node(Node* node, int* vars, int* error) {
             if (right == 0) { *error = 1; return 0; }
             return left % right;
         }
-        if (op == '#') {
+        if (op == '^') {
             if (left <= 0 || right <= 0) { *error = 1; return 0; }
             long long a = left, b = right;
-            while (b) { long long t = a % b; a = b; b = t; }
-            return a;
+            long long t = a;
+            for (int i = 0; i < b; ++i) {
+                t *= a;
+            }
+            return t;
         }
         *error = 1;
         return 0;
@@ -575,10 +579,12 @@ void handle_parse(const char* args, FILE* out) {
         print_incorrect(out);
         return;
     }
+    
     if (!is_valid_expr(args)) {
         fprintf(out, "incorrect\n");
         return;
     }
+    
     Node* new_root = parse_infix(args);
     if (new_root) {
         if (root) free_tree(root);
@@ -661,13 +667,16 @@ void handle_eval(const char* args, FILE* out) {
         if (!islower(*p)) { print_incorrect(out); return; }
         char name = *p;
         p++;
+        
         while (isspace(*p)) p++;
         if (*p != '=') { print_incorrect(out); return; }
         p++;
+        
         while (isspace(*p)) p++;
         int sign = 1;
         if (*p == '-') { sign = -1; p++; }
         else if (*p == '+') p++;
+        
         if (!isdigit(*p)) { print_incorrect(out); return; }
         long long val = 0;
         while (isdigit(*p)) {
@@ -815,11 +824,9 @@ void read_input(FILE* input, FILE* output) {
         if (!handled) {
             print_incorrect(output);
         }
-        
-        
-        
        
         my_free(line);
+        my_free(line_copy);
     }
 }
 
@@ -833,32 +840,20 @@ int main(void) {
         return 1;
     }
 
-    char line[10000];
-    if (input) {
-        while (fgets(line, sizeof(line), input)) {
-            line[strcspn(line, "\r\n")] = '\0';
-            size_t len = strlen(line);
-            while (len > 0 && isspace((unsigned char)line[len - 1])) {
-                line[len - 1] = '\0';
-                len--;
-            }
-            if (line[0] == '\0') continue;
-
-        }
-        fclose(input);
-    }
-
-    fclose(output);
+    read_input(input, output);
+    
     if (root) free_tree(root);
 
     FILE* memstat = fopen("memstat.txt", "w");
     if (memstat) {
         fprintf(memstat, "malloc:%d\n", malloc_count);
         fprintf(memstat, "calloc:0\n");
-        fprintf(memstat, "realloc:0\n");
+        fprintf(memstat, "realloc:%d\n", realloc_count);
         fprintf(memstat, "free:%d\n", free_count);
         fclose(memstat);
     }
+    fclose(input);
+    fclose(output);
     return 0;
 }
 
