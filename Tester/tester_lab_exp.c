@@ -101,7 +101,7 @@ int main(void) {
     
     if (!file_exists(EXECUTABLE)) {
         printf("ОШИБКА: Исполняемый файл %s не найден!\n", EXECUTABLE);
-        printf("gcc -o %s ./The-Expression-tree/Expression-tree.c\n", EXECUTABLE);
+        printf("gcc -o %s ./The-Expression-tree/Expression-tree/lab_expr.c\n", EXECUTABLE);
         return 1;
     }
     
