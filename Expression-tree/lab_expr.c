@@ -1,44 +1,46 @@
 #define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
 
-static size_t malloc_count = 0;
-static size_t realloc_count = 0;
-static size_t free_count = 0;
+size_t g_malloc_count  = 0;
+size_t g_realloc_count = 0;
+size_t g_free_count    = 0;
 
-void* my_malloc(size_t size) {
-    malloc_count++;
+void* memory_alloc(size_t size) {
+    g_malloc_count++;
     return malloc(size);
 }
 
-void* my_realloc(void* ptr, size_t size) {
+void* memory_realloc(void* ptr, size_t size) {
     if (ptr == NULL)
-        return my_malloc(size);
+        return memory_alloc(size);
     else
-        realloc_count++;
+        g_realloc_count++;
     return realloc(ptr, size);
 }
-void my_free(void* ptr) {
+void memory_free(void* ptr) {
     if (ptr) {
-        free_count++;
+        g_free_count++;
         free(ptr);
     }
 }
 
-#define malloc my_malloc
-#define realloc my_realloc
-#define free my_free
+#define malloc memory_alloc
+#define realloc memory_realloc
+#define free memory_free
+
 #define INITIAL_BUFFER_SIZE 256
 #define BUFFER_GROWTH_FACTOR 2
 
 typedef enum {
-    CONST,
-    VAR,
-    UNARY,
-    BINARY
+    NODE_CONST,
+    NODE_VAR,
+    NODE_UNARY,
+    NODE_BINARY
 } NodeType;
 
 typedef struct Node {
@@ -58,70 +60,70 @@ typedef struct Node {
     } data;
 } Node;
 
-Node* create_const(int val) {
+Node* make_const(int val) {
     Node* node = (Node*)malloc(sizeof(Node));
-    node->type = CONST;
+    node->type = NODE_CONST;
     node->data.const_val = val;
     return node;
 }
 
-Node* create_var(char name) {
+Node* make_var(char name) {
     Node* node = (Node*)malloc(sizeof(Node));
-    node->type = VAR;
+    node->type = NODE_VAR;
     node->data.var_name = name;
     return node;
 }
 
-Node* create_unary(char op, Node* operand) {
+Node* make_unary(char op, Node* operand) {
     Node* node = (Node*)malloc(sizeof(Node));
-    node->type = UNARY;
+    node->type = NODE_UNARY;
     node->data.unary.op = op;
     node->data.unary.operand = operand;
     return node;
 }
 
-Node* create_binary(char op, Node* left, Node* right) {
+Node* make_binary(char op, Node* left, Node* right) {
     Node* node = (Node*)malloc(sizeof(Node));
-    node->type = BINARY;
+    node->type = NODE_BINARY;
     node->data.binary.op = op;
     node->data.binary.left = left;
     node->data.binary.right = right;
     return node;
 }
 
-void free_node(Node* node) {
+void delete_node(Node* node) {
     if (!node) return;
-    if (node->type == UNARY)
-        free_node(node->data.unary.operand);
-    else if (node->type == BINARY) {
-        free_node(node->data.binary.left);
-        free_node(node->data.binary.right);
+    if (node->type == NODE_UNARY)
+        delete_node(node->data.unary.operand);
+    else if (node->type == NODE_BINARY) {
+        delete_node(node->data.binary.left);
+        delete_node(node->data.binary.right);
     }
     free(node);
 }
 
-void skip_spaces(const char* s, int* pos) {
+void skip_whitespace(const char* s, int* pos) {
     while (s[*pos] && isspace((unsigned char)s[*pos]))
         (*pos)++;
 }
 
-static Node* parse_sum(const char* s, int* pos);
-static Node* parse_mult(const char* s, int* pos);
-static Node* parse_pow(const char* s, int* pos);
-static Node* parse_unary_minus(const char* s, int* pos);
-static Node* parse_factorial(const char* s, int* pos);
-static Node* parse_primary(const char* s, int* pos);
+Node* parse_addition(const char* s, int* pos);
+Node* parse_multiplication(const char* s, int* pos);
+Node* parse_power(const char* s, int* pos);
+Node* parse_unary(const char* s, int* pos);
+Node* parse_factor(const char* s, int* pos);
+Node* parse_primary(const char* s, int* pos);
 
-static Node* parse_primary(const char* s, int* pos) {
-    skip_spaces(s, pos);
+Node* parse_primary(const char* s, int* pos) {
+    skip_whitespace(s, pos);
     char c = s[*pos];
     if (c == '(') {
         (*pos)++;
-        Node* expr = parse_sum(s, pos);
+        Node* expr = parse_addition(s, pos);
         if (!expr) return NULL;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
         if (s[*pos] != ')') {
-            free_node(expr);
+            delete_node(expr);
             return NULL;
         }
         (*pos)++;
@@ -136,130 +138,130 @@ static Node* parse_primary(const char* s, int* pos) {
             (*pos)++;
         }
         if (*pos == start) return NULL;
-        return create_const((int)val);
+        return make_const((int)val);
     }
     else if (islower((unsigned char)c)) {
         (*pos)++;
-        return create_var(c);
+        return make_var(c);
     }
     return NULL;
 }
 
-static Node* parse_factorial(const char* s, int* pos) {
+Node* parse_factor(const char* s, int* pos) {
     Node* node = parse_primary(s, pos);
     if (!node) return NULL;
-    skip_spaces(s, pos);
+    skip_whitespace(s, pos);
     while (s[*pos] == '!') {
         (*pos)++;
-        Node* newnode = create_unary('!', node);
+        Node* newnode = make_unary('!', node);
         if (!newnode) {
-            free_node(node);
+            delete_node(node);
             return NULL;
         }
         node = newnode;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
     }
     return node;
 }
 
-static Node* parse_unary_minus(const char* s, int* pos) {
-    skip_spaces(s, pos);
+Node* parse_unary(const char* s, int* pos) {
+    skip_whitespace(s, pos);
     if (s[*pos] == '-') {
         (*pos)++;
-        Node* sub = parse_unary_minus(s, pos);
+        Node* sub = parse_unary(s, pos);
         if (!sub) return NULL;
-        return create_unary('-', sub);
+        return make_unary('-', sub);
     }
-    return parse_factorial(s, pos);
+    return parse_factor(s, pos);
 }
 
-static Node* parse_pow(const char* s, int* pos) {
-    Node* left = parse_unary_minus(s, pos);
+Node* parse_power(const char* s, int* pos) {
+    Node* left = parse_unary(s, pos);
     if (!left) return NULL;
-    skip_spaces(s, pos);
+    skip_whitespace(s, pos);
     while (s[*pos] == '^') {
         char op = s[*pos];
         (*pos)++;
-        Node* right = parse_unary_minus(s, pos);
+        Node* right = parse_unary(s, pos);
         if (!right) {
-            free_node(left);
+            delete_node(left);
             return NULL;
         }
-        Node* newnode = create_binary(op, left, right);
+        Node* newnode = make_binary(op, left, right);
         if (!newnode) {
-            free_node(left);
-            free_node(right);
+            delete_node(left);
+            delete_node(right);
             return NULL;
         }
         left = newnode;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
     }
     return left;
 }
 
-static Node* parse_mult(const char* s, int* pos) {
-    Node* left = parse_pow(s, pos);
+Node* parse_multiplication(const char* s, int* pos) {
+    Node* left = parse_power(s, pos);
     if (!left) return NULL;
-    skip_spaces(s, pos);
+    skip_whitespace(s, pos);
     while (s[*pos] == '*' || s[*pos] == '/' || s[*pos] == '%') {
         char op = s[*pos];
         (*pos)++;
-        Node* right = parse_pow(s, pos);
+        Node* right = parse_power(s, pos);
         if (!right) {
-            free_node(left);
+            delete_node(left);
             return NULL;
         }
-        Node* newnode = create_binary(op, left, right);
+        Node* newnode = make_binary(op, left, right);
         if (!newnode) {
-            free_node(left);
-            free_node(right);
+            delete_node(left);
+            delete_node(right);
             return NULL;
         }
         left = newnode;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
     }
     return left;
 }
 
-static Node* parse_sum(const char* s, int* pos) {
-    Node* left = parse_mult(s, pos);
+Node* parse_addition(const char* s, int* pos) {
+    Node* left = parse_multiplication(s, pos);
     if (!left) return NULL;
-    skip_spaces(s, pos);
+    skip_whitespace(s, pos);
     while (s[*pos] == '+' || s[*pos] == '-') {
         char op = s[*pos];
         (*pos)++;
-        Node* right = parse_mult(s, pos);
+        Node* right = parse_multiplication(s, pos);
         if (!right) {
-            free_node(left);
+            delete_node(left);
             return NULL;
         }
-        Node* newnode = create_binary(op, left, right);
+        Node* newnode = make_binary(op, left, right);
         if (!newnode) {
-            free_node(left);
-            free_node(right);
+            delete_node(left);
+            delete_node(right);
             return NULL;
         }
         left = newnode;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
     }
     return left;
 }
 
-Node* parse_infix(const char* s) {
+Node* parse_infix_expression(const char* s) {
     int pos = 0;
-    Node* root = parse_sum(s, &pos);
+    Node* root = parse_addition(s, &pos);
     if (root) {
-        skip_spaces(s, &pos);
+        skip_whitespace(s, &pos);
         if (s[pos] != '\0') {
-            free_node(root);
+            delete_node(root);
             root = NULL;
         }
     }
     return root;
 }
 
-static Node* parse_prefix_rec(const char* s, int* pos) {
-    skip_spaces(s, pos);
+Node* parse_prefix_recursive(const char* s, int* pos) {
+    skip_whitespace(s, pos);
     char c = s[*pos];
     if (c == '\0') return NULL;
     if (isdigit((unsigned char)c)) {
@@ -269,64 +271,64 @@ static Node* parse_prefix_rec(const char* s, int* pos) {
             if (val > INT_MAX) return NULL;
             (*pos)++;
         }
-        return create_const((int)val);
+        return make_const((int)val);
     }
     else if (islower((unsigned char)c)) {
         (*pos)++;
-        return create_var(c);
+        return make_var(c);
     }
     else if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '!') {
         char op = c;
         (*pos)++;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
         if (s[*pos] != '(') return NULL;
         (*pos)++;
-        Node* arg1 = parse_prefix_rec(s, pos);
+        Node* arg1 = parse_prefix_recursive(s, pos);
         if (!arg1) return NULL;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
         if (s[*pos] == ',') {
             (*pos)++;
-            Node* arg2 = parse_prefix_rec(s, pos);
+            Node* arg2 = parse_prefix_recursive(s, pos);
             if (!arg2) {
-                free_node(arg1);
+                delete_node(arg1);
                 return NULL;
             }
-            skip_spaces(s, pos);
+            skip_whitespace(s, pos);
             if (s[*pos] != ')') {
-                free_node(arg1);
-                free_node(arg2);
+                delete_node(arg1);
+                delete_node(arg2);
                 return NULL;
             }
             (*pos)++;
-            return create_binary(op, arg1, arg2);
+            return make_binary(op, arg1, arg2);
         }
         else if (s[*pos] == ')') {
             (*pos)++;
-            return create_unary(op, arg1);
+            return make_unary(op, arg1);
         }
         else {
-            free_node(arg1);
+            delete_node(arg1);
             return NULL;
         }
     }
     return NULL;
 }
 
-Node* parse_prefix(const char* s) {
+Node* parse_prefix_expression(const char* s) {
     int pos = 0;
-    Node* root = parse_prefix_rec(s, &pos);
+    Node* root = parse_prefix_recursive(s, &pos);
     if (root) {
-        skip_spaces(s, &pos);
+        skip_whitespace(s, &pos);
         if (s[pos] != '\0') {
-            free_node(root);
+            delete_node(root);
             root = NULL;
         }
     }
     return root;
 }
 
-static Node* parse_postfix_rec(const char* s, int* pos) {
-    skip_spaces(s, pos);
+Node* parse_postfix_recursive(const char* s, int* pos) {
+    skip_whitespace(s, pos);
     char c = s[*pos];
     if (c == '\0') return NULL;
     if (isdigit((unsigned char)c)) {
@@ -336,67 +338,67 @@ static Node* parse_postfix_rec(const char* s, int* pos) {
             if (val > INT_MAX) return NULL;
             (*pos)++;
         }
-        return create_const((int)val);
+        return make_const((int)val);
     }
     else if (islower((unsigned char)c)) {
         (*pos)++;
-        return create_var(c);
+        return make_var(c);
     }
     else if (c == '(') {
         (*pos)++;
-        Node* arg1 = parse_postfix_rec(s, pos);
+        Node* arg1 = parse_postfix_recursive(s, pos);
         if (!arg1) return NULL;
-        skip_spaces(s, pos);
+        skip_whitespace(s, pos);
         if (s[*pos] == ',') {
             (*pos)++;
-            Node* arg2 = parse_postfix_rec(s, pos);
+            Node* arg2 = parse_postfix_recursive(s, pos);
             if (!arg2) {
-                free_node(arg1);
+                delete_node(arg1);
                 return NULL;
             }
-            skip_spaces(s, pos);
+            skip_whitespace(s, pos);
             if (s[*pos] != ')') {
-                free_node(arg1);
-                free_node(arg2);
+                delete_node(arg1);
+                delete_node(arg2);
                 return NULL;
             }
             (*pos)++;
-            skip_spaces(s, pos);
+            skip_whitespace(s, pos);
             char op = s[*pos];
             if (op != '+' && op != '-' && op != '*' && op != '/' && op != '%' && op != '^' && op != '!') {
-                free_node(arg1);
-                free_node(arg2);
+                delete_node(arg1);
+                delete_node(arg2);
                 return NULL;
             }
             (*pos)++;
-            return create_binary(op, arg1, arg2);
+            return make_binary(op, arg1, arg2);
         }
         else if (s[*pos] == ')') {
             (*pos)++;
-            skip_spaces(s, pos);
+            skip_whitespace(s, pos);
             char op = s[*pos];
             if (op != '+' && op != '-' && op != '*' && op != '/' && op != '%' && op != '^' && op != '!') {
-                free_node(arg1);
+                delete_node(arg1);
                 return NULL;
             }
             (*pos)++;
-            return create_unary(op, arg1);
+            return make_unary(op, arg1);
         }
         else {
-            free_node(arg1);
+            delete_node(arg1);
             return NULL;
         }
     }
     return NULL;
 }
 
-Node* parse_postfix(const char* s) {
+Node* parse_postfix_expression(const char* s) {
     int pos = 0;
-    Node* root = parse_postfix_rec(s, &pos);
+    Node* root = parse_postfix_recursive(s, &pos);
     if (root) {
-        skip_spaces(s, &pos);
+        skip_whitespace(s, &pos);
         if (s[pos] != '\0') {
-            free_node(root);
+            delete_node(root);
             root = NULL;
         }
     }
@@ -437,53 +439,53 @@ void sb_free(StringBuilder* sb) {
     sb->len = sb->cap = 0;
 }
 
-void node_to_prefix(Node* node, StringBuilder* sb) {
+void tree_to_prefix(Node* node, StringBuilder* sb) {
     if (!node) return;
-    if (node->type == CONST) {
+    if (node->type == NODE_CONST) {
         char buf[32];
         sprintf(buf, "%d", node->data.const_val);
         sb_append_str(sb, buf);
     }
-    else if (node->type == VAR) {
+    else if (node->type == NODE_VAR) {
         sb_append_char(sb, node->data.var_name);
     }
-    else if (node->type == UNARY) {
+    else if (node->type == NODE_UNARY) {
         sb_append_char(sb, node->data.unary.op);
         sb_append_char(sb, '(');
-        node_to_prefix(node->data.unary.operand, sb);
+        tree_to_prefix(node->data.unary.operand, sb);
         sb_append_char(sb, ')');
     }
     else {
         sb_append_char(sb, node->data.binary.op);
         sb_append_char(sb, '(');
-        node_to_prefix(node->data.binary.left, sb);
+        tree_to_prefix(node->data.binary.left, sb);
         sb_append_str(sb, ",");
-        node_to_prefix(node->data.binary.right, sb);
+        tree_to_prefix(node->data.binary.right, sb);
         sb_append_char(sb, ')');
     }
 }
 
-void node_to_postfix(Node* node, StringBuilder* sb) {
+void tree_to_postfix(Node* node, StringBuilder* sb) {
     if (!node) return;
-    if (node->type == CONST) {
+    if (node->type == NODE_CONST) {
         char buf[32];
         sprintf(buf, "%d", node->data.const_val);
         sb_append_str(sb, buf);
     }
-    else if (node->type == VAR) {
+    else if (node->type == NODE_VAR) {
         sb_append_char(sb, node->data.var_name);
     }
-    else if (node->type == UNARY) {
+    else if (node->type == NODE_UNARY) {
         sb_append_char(sb, '(');
-        node_to_postfix(node->data.unary.operand, sb);
+        tree_to_postfix(node->data.unary.operand, sb);
         sb_append_char(sb, ')');
         sb_append_char(sb, node->data.unary.op);
     }
     else {
         sb_append_char(sb, '(');
-        node_to_postfix(node->data.binary.left, sb);
+        tree_to_postfix(node->data.binary.left, sb);
         sb_append_str(sb, ",");
-        node_to_postfix(node->data.binary.right, sb);
+        tree_to_postfix(node->data.binary.right, sb);
         sb_append_char(sb, ')');
         sb_append_char(sb, node->data.binary.op);
     }
@@ -546,24 +548,25 @@ int safe_pow(int a, int b, int* res) {
     }
     long long t = a;
     while (--b) {
+        if (t > INT_MAX || t < INT_MIN) return 1;
         t *= a;
     }
-    if (t > INT_MAX) return 1;
+    if (t > INT_MAX || t < INT_MIN) return 1;
     *res = (int)t;
     
     return 0;
 }
 
-int eval_node(Node* node, int* var_values, int* var_set, int* error) {
+int eval_tree(Node* node, int* var_values, int* var_set, int* error) {
     if (*error) return 0;
     if (!node) {
         *error = 1;
         return 0;
     }
-    if (node->type == CONST) {
+    if (node->type == NODE_CONST) {
         return node->data.const_val;
     }
-    else if (node->type == VAR) {
+    else if (node->type == NODE_VAR) {
         int idx = node->data.var_name - 'a';
         if (!var_set[idx]) {
             *error = 1;
@@ -571,8 +574,8 @@ int eval_node(Node* node, int* var_values, int* var_set, int* error) {
         }
         return var_values[idx];
     }
-    else if (node->type == UNARY) {
-        int val = eval_node(node->data.unary.operand, var_values, var_set, error);
+    else if (node->type == NODE_UNARY) {
+        int val = eval_tree(node->data.unary.operand, var_values, var_set, error);
         if (*error) return 0;
         if (node->data.unary.op == '-') {
             return -val;
@@ -591,9 +594,9 @@ int eval_node(Node* node, int* var_values, int* var_set, int* error) {
         }
     }
     else {
-        int left = eval_node(node->data.binary.left, var_values, var_set, error);
+        int left = eval_tree(node->data.binary.left, var_values, var_set, error);
         if (*error) return 0;
-        int right = eval_node(node->data.binary.right, var_values, var_set, error);
+        int right = eval_tree(node->data.binary.right, var_values, var_set, error);
         if (*error) return 0;
         char op = node->data.binary.op;
         if (op == '+') {
@@ -633,14 +636,14 @@ int eval_node(Node* node, int* var_values, int* var_set, int* error) {
 
 void collect_vars(Node* node, int* vars) {
     if (!node) return;
-    if (node->type == VAR) {
+    if (node->type == NODE_VAR) {
         int idx = node->data.var_name - 'a';
         vars[idx] = 1;
     }
-    else if (node->type == UNARY) {
+    else if (node->type == NODE_UNARY) {
         collect_vars(node->data.unary.operand, vars);
     }
-    else if (node->type == BINARY) {
+    else if (node->type == NODE_BINARY) {
         collect_vars(node->data.binary.left, vars);
         collect_vars(node->data.binary.right, vars);
     }
@@ -714,9 +717,9 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
         while (*p && isspace((unsigned char)*p)) p++;
 
         if (strcmp(cmd, "parse") == 0) {
-            Node* new_tree = parse_infix(p);
+            Node* new_tree = parse_infix_expression(p);
             if (new_tree) {
-                if (current_tree) free_node(*current_tree);
+                if (current_tree) delete_node(*current_tree);
                 *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
@@ -725,9 +728,9 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
             }
         }
         else if (strcmp(cmd, "load_prf") == 0) {
-            Node* new_tree = parse_prefix(p);
+            Node* new_tree = parse_prefix_expression(p);
             if (new_tree) {
-                if (current_tree) free_node(*current_tree);
+                if (current_tree) delete_node(*current_tree);
                 *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
@@ -736,9 +739,9 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
             }
         }
         else if (strcmp(cmd, "load_pst") == 0) {
-            Node* new_tree = parse_postfix(p);
+            Node* new_tree = parse_postfix_expression(p);
             if (new_tree) {
-                if (current_tree) free_node(*current_tree);
+                if (current_tree) delete_node(*current_tree);
                 *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
@@ -756,7 +759,7 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
             else {
                 StringBuilder sb;
                 sb_init(&sb);
-                node_to_prefix(*current_tree, &sb);
+                tree_to_prefix(*current_tree, &sb);
                 fprintf(output, "%s\n", sb.data);
                 sb_free(&sb);
             }
@@ -771,7 +774,7 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
             else {
                 StringBuilder sb;
                 sb_init(&sb);
-                node_to_postfix(*current_tree, &sb);
+                tree_to_postfix(*current_tree, &sb);
                 fprintf(output, "%s\n", sb.data);
                 sb_free(&sb);
             }
@@ -798,10 +801,9 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
                 }
                 if (has_vars) {
                     fprintf(output, "no_var_values\n");
-                }
-                else {
+                } else {
                     int error = 0;
-                    int res = eval_node(*current_tree, var_values, var_set, &error);
+                    int res = eval_tree(*current_tree, var_values, var_set, &error);
                     if (error)
                         fprintf(output, "error\n");
                     else
@@ -882,7 +884,7 @@ void read_input(FILE* input, FILE* output, Node** current_tree) {
             }
 
             int error = 0;
-            int res = eval_node(*current_tree, var_values, var_set, &error);
+            int res = eval_tree(*current_tree, var_values, var_set, &error);
             if (error)
                 fprintf(output, "error\n");
             else
@@ -909,15 +911,15 @@ int main(void) {
     
     read_input(input, output, &current_tree);
     
-    if (current_tree) free_node(current_tree);
+    if (current_tree) delete_node(current_tree);
     fclose(input);
     fclose(output);
 
     FILE* memstat = fopen("memstat.txt", "w");
     if (memstat) {
-        fprintf(memstat, "malloc:%lu\n", (unsigned long)malloc_count);
-        fprintf(memstat, "realloc:%lu\n", (unsigned long)realloc_count);
-        fprintf(memstat, "free:%lu\n", (unsigned long)free_count);
+        fprintf(memstat, "malloc:%lu\n", (unsigned long)g_malloc_count);
+        fprintf(memstat, "realloc:%lu\n", (unsigned long)g_realloc_count);
+        fprintf(memstat, "free:%lu\n", (unsigned long)g_free_count);
         fclose(memstat);
     }
 
