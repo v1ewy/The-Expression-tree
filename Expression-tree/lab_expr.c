@@ -16,7 +16,7 @@ void* my_malloc(size_t size) {
 
 void* my_realloc(void* ptr, size_t size) {
     if (ptr == NULL)
-        malloc_count++;
+        return my_malloc(size);
     else
         realloc_count++;
     return realloc(ptr, size);
@@ -658,7 +658,7 @@ char* trim(char* s) {
 
 char* read_dynamic_line(FILE* input, size_t* line_length) {
     size_t buffer_size = INITIAL_BUFFER_SIZE;
-    char* buffer = (char*)my_malloc(buffer_size);
+    char* buffer = (char*)malloc(buffer_size);
     if (!buffer) return NULL;
     buffer[0] = '\0';
     size_t pos = 0;
@@ -666,7 +666,7 @@ char* read_dynamic_line(FILE* input, size_t* line_length) {
     while (1) {
         if (fgets(buffer + pos, (int)(buffer_size - pos), input) == NULL) {
             if (pos == 0) {
-                my_free(buffer);
+                free(buffer);
                 return NULL;
             }
             break;
@@ -676,9 +676,9 @@ char* read_dynamic_line(FILE* input, size_t* line_length) {
         if (len > 0 && buffer[pos - 1] == '\n') break;
         if (pos >= buffer_size - 1) {
             size_t new_size = buffer_size * BUFFER_GROWTH_FACTOR;
-            char* new_buffer = (char*)my_realloc(buffer, new_size);
+            char* new_buffer = (char*)realloc(buffer, new_size);
             if (!new_buffer) {
-                my_free(buffer);
+                free(buffer);
                 return NULL;
             }
             buffer = new_buffer;
@@ -689,14 +689,14 @@ char* read_dynamic_line(FILE* input, size_t* line_length) {
     return buffer;
 }
 
-void read_input(FILE* input, FILE* output, Node* current_tree) {
+void read_input(FILE* input, FILE* output, Node** current_tree) {
     char* line;
     size_t line_length;
     while ((line = read_dynamic_line(input, &line_length)) != NULL) {
         line[strcspn(line, "\r\n")] = '\0';
         line = trim(line);
         if (line[0] == '\0') {
-            my_free(line);
+            free(line);
             continue;
         }
 
@@ -716,8 +716,8 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
         if (strcmp(cmd, "parse") == 0) {
             Node* new_tree = parse_infix(p);
             if (new_tree) {
-                if (current_tree) free_node(current_tree);
-                current_tree = new_tree;
+                if (current_tree) free_node(*current_tree);
+                *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
             else {
@@ -727,8 +727,8 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
         else if (strcmp(cmd, "load_prf") == 0) {
             Node* new_tree = parse_prefix(p);
             if (new_tree) {
-                if (current_tree) free_node(current_tree);
-                current_tree = new_tree;
+                if (current_tree) free_node(*current_tree);
+                *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
             else {
@@ -738,8 +738,8 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
         else if (strcmp(cmd, "load_pst") == 0) {
             Node* new_tree = parse_postfix(p);
             if (new_tree) {
-                if (current_tree) free_node(current_tree);
-                current_tree = new_tree;
+                if (current_tree) free_node(*current_tree);
+                *current_tree = new_tree;
                 fprintf(output, "success\n");
             }
             else {
@@ -756,7 +756,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
             else {
                 StringBuilder sb;
                 sb_init(&sb);
-                node_to_prefix(current_tree, &sb);
+                node_to_prefix(*current_tree, &sb);
                 fprintf(output, "%s\n", sb.data);
                 sb_free(&sb);
             }
@@ -771,7 +771,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
             else {
                 StringBuilder sb;
                 sb_init(&sb);
-                node_to_postfix(current_tree, &sb);
+                node_to_postfix(*current_tree, &sb);
                 fprintf(output, "%s\n", sb.data);
                 sb_free(&sb);
             }
@@ -787,7 +787,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
 
             if (*p == '\0') {
                 int vars_present[26] = { 0 };
-                collect_vars(current_tree, vars_present);
+                collect_vars(*current_tree, vars_present);
                 int has_vars = 0;
                 int i;
                 for (i = 0; i < 26; i++) {
@@ -801,7 +801,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
                 }
                 else {
                     int error = 0;
-                    int res = eval_node(current_tree, var_values, var_set, &error);
+                    int res = eval_node(*current_tree, var_values, var_set, &error);
                     if (error)
                         fprintf(output, "error\n");
                     else
@@ -864,7 +864,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
             }
 
             int vars_present[26] = { 0 };
-            collect_vars(current_tree, vars_present);
+            collect_vars(*current_tree, vars_present);
             int missing = 0;
             int extra = 0;
             int i;
@@ -882,7 +882,7 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
             }
 
             int error = 0;
-            int res = eval_node(current_tree, var_values, var_set, &error);
+            int res = eval_node(*current_tree, var_values, var_set, &error);
             if (error)
                 fprintf(output, "error\n");
             else
@@ -891,8 +891,9 @@ void read_input(FILE* input, FILE* output, Node* current_tree) {
         else {
             fprintf(output, "incorrect\n");
         }
+        
+        free(line);
     }
-
 }
 
 int main(void) {
@@ -906,7 +907,7 @@ int main(void) {
 
     Node* current_tree = NULL;
     
-    read_input(input, output, current_tree);
+    read_input(input, output, &current_tree);
     
     if (current_tree) free_node(current_tree);
     fclose(input);
