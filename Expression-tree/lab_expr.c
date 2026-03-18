@@ -953,7 +953,6 @@ int main(void) {
     FILE* memstat = fopen("memstat.txt", "w");
     if (memstat) {
         fprintf(memstat, "malloc:%d\n", malloc_count);
-        fprintf(memstat, "calloc:0\n");
         fprintf(memstat, "realloc:%d\n", realloc_count);
         fprintf(memstat, "free:%d\n", free_count);
         fclose(memstat);
